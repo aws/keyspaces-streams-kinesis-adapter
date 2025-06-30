@@ -1,0 +1,53 @@
+{
+  "eventVersion": "1.1",
+  "createdAt": 1156377.6,
+  "origin": "USER",
+  "partitionKeys": {
+    "pk": {
+      "asciiT": "partition_key"
+    }
+  },
+  "clusteringKeys": {
+    "ck": {
+      "asciiT": "clustering_key"
+    }
+  },
+  "newImage": {
+    "valueCells": {
+      "empty_list": {
+        "value": {
+          "listT": []
+        },
+        "metadata": null
+      },
+      "empty_set": {
+        "value": {
+          "setT": []
+        },
+        "metadata": null
+      },
+      "empty_map": {
+        "value": {
+          "mapT": []
+        },
+        "metadata": null
+      },
+      "empty_udt": {
+        "value": {
+          "udtT": {}
+        },
+        "metadata": null
+      },
+      "empty_tuple": {
+        "value": {
+          "tupleT": []
+        },
+        "metadata": null
+      }
+    },
+    "staticCells": {},
+    "rowMetadata": null
+  },
+  "oldImage": null,
+  "sequenceNumber": "TestString"
+}

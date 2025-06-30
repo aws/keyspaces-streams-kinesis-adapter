@@ -1,0 +1,127 @@
+{
+  "eventVersion": "1.1",
+  "createdAt": 1156377.6,
+  "origin": "USER",
+  "partitionKeys": {
+    "pk": {
+      "asciiT": "partition_key"
+    }
+  },
+  "clusteringKeys": {
+    "ck": {
+      "asciiT": "clustering_key"
+    }
+  },
+  "newImage": {
+    "valueCells": {
+      "max_depth_udt": {
+        "value": {
+          "udtT": {
+            "top_level_field": {
+              "value": {
+                "textT": "root_value"
+              },
+              "metadata": null
+            },
+            "level2": {
+              "value": {
+                "udtT": {
+                  "field2": {
+                    "value": {
+                      "textT": "value_2"
+                    },
+                    "metadata": null
+                  },
+                  "level3": {
+                    "value": {
+                      "udtT": {
+                        "field3": {
+                          "value": {
+                            "textT": "value_3"
+                          },
+                          "metadata": null
+                        },
+                        "level4": {
+                          "value": {
+                            "udtT": {
+                              "field4": {
+                                "value": {
+                                  "textT": "value_4"
+                                },
+                                "metadata": null
+                              },
+                              "level5": {
+                                "value": {
+                                  "udtT": {
+                                    "field5": {
+                                      "value": {
+                                        "textT": "value_5"
+                                      },
+                                      "metadata": null
+                                    },
+                                    "level6": {
+                                      "value": {
+                                        "udtT": {
+                                          "field6": {
+                                            "value": {
+                                              "textT": "value_6"
+                                            },
+                                            "metadata": null
+                                          },
+                                          "level7": {
+                                            "value": {
+                                              "udtT": {
+                                                "field7": {
+                                                  "value": {
+                                                    "textT": "value_7"
+                                                  },
+                                                  "metadata": null
+                                                },
+                                                "level8": {
+                                                  "value": {
+                                                    "udtT": {
+                                                      "leaf": {
+                                                        "value": {
+                                                          "textT": "deepest_value"
+                                                        },
+                                                        "metadata": null
+                                                      }
+                                                    }
+                                                  },
+                                                  "metadata": null
+                                                }
+                                              }
+                                            },
+                                            "metadata": null
+                                          }
+                                        }
+                                      },
+                                      "metadata": null
+                                    }
+                                  }
+                                },
+                                "metadata": null
+                              }
+                            }
+                          },
+                          "metadata": null
+                        }
+                      }
+                    },
+                    "metadata": null
+                  }
+                }
+              },
+              "metadata": null
+            }
+          }
+        },
+        "metadata": null
+      }
+    },
+    "staticCells": {},
+    "rowMetadata": null
+  },
+  "oldImage": null,
+  "sequenceNumber": "TestString"
+}

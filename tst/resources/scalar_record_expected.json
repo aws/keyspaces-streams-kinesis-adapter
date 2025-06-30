@@ -1,0 +1,137 @@
+{
+  "eventVersion": "1.1",
+  "createdAt": 1156377.6,
+  "origin": "USER",
+  "partitionKeys": {
+    "pk": {
+      "asciiT": "partition_key"
+    }
+  },
+  "clusteringKeys": {
+    "ck": {
+      "asciiT": "clustering_key"
+    }
+  },
+  "newImage": {
+    "valueCells": {
+      "ascii_col": {
+        "value": {
+          "asciiT": "test_ascii"
+        },
+        "metadata": null
+      },
+      "bigint_col": {
+        "value": {
+          "bigintT": "9223372036854775807"
+        },
+        "metadata": null
+      },
+      "blob_col": {
+        "value": {
+          "blobT": "AAAAAQ=="
+        },
+        "metadata": null
+      },
+      "bool_col": {
+        "value": {
+          "boolT": true
+        },
+        "metadata": null
+      },
+      "date_col": {
+        "value": {
+          "dateT": "2024-01-01"
+        },
+        "metadata": null
+      },
+      "decimal_col": {
+        "value": {
+          "decimalT": "123.456"
+        },
+        "metadata": null
+      },
+      "double_col": {
+        "value": {
+          "doubleT": "1.7976"
+        },
+        "metadata": null
+      },
+      "float_col": {
+        "value": {
+          "floatT": "3.4028235E38"
+        },
+        "metadata": null
+      },
+      "inet_col": {
+        "value": {
+          "inetT": "192.168.1.1"
+        },
+        "metadata": null
+      },
+      "int_col": {
+        "value": {
+          "intT": "2147483647"
+        },
+        "metadata": null
+      },
+      "smallint_col": {
+        "value": {
+          "smallintT": "32767"
+        },
+        "metadata": null
+      },
+      "text_col": {
+        "value": {
+          "textT": "test_text"
+        },
+        "metadata": null
+      },
+      "time_col": {
+        "value": {
+          "timeT": "12:34:56.789"
+        },
+        "metadata": null
+      },
+      "timeuuid_col": {
+        "value": {
+          "timeuuidT": "00000000-0000-0000-0000-000000000000"
+        },
+        "metadata": null
+      },
+      "tinyint_col": {
+        "value": {
+          "tinyintT": "127"
+        },
+        "metadata": null
+      },
+      "uuid_col": {
+        "value": {
+          "uuidT": "00000000-0000-0000-0000-000000000000"
+        },
+        "metadata": null
+      },
+      "varchar_col": {
+        "value": {
+          "varcharT": "test_varchar"
+        },
+        "metadata": null
+      },
+      "varint_col": {
+        "value": {
+          "varintT": "1234567890"
+        },
+        "metadata": null
+      },
+      "counter_col": {
+        "value": {
+          "counterT": "42"
+        },
+        "metadata": null
+      }
+    },
+    "staticCells": {},
+    "rowMetadata": null
+  },
+  "oldImage": null,
+  "sequenceNumber": "TestString"
+}

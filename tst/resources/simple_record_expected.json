@@ -1,0 +1,32 @@
+{
+  "eventVersion": "1.1",
+  "createdAt": 1156377.6,
+  "origin": "USER",
+  "partitionKeys": {
+    "pk": {
+      "asciiT": "partition_key"
+    }
+  },
+  "clusteringKeys": {
+    "ck": {
+      "asciiT": "clustering_key"
+    }
+  },
+  "newImage": {
+    "valueCells": {
+      "test_col": {
+        "value": {
+          "textT": "test_value"
+        },
+        "metadata": {
+          "expirationTime": "1234567899",
+          "writeTime": "1234567890"
+        }
+      }
+    },
+    "staticCells": {},
+    "rowMetadata": null
+  },
+  "oldImage": null,
+  "sequenceNumber": "TestString"
+}

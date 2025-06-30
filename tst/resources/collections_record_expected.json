@@ -1,0 +1,124 @@
+{
+  "eventVersion": "1.1",
+  "createdAt": 1156377.6,
+  "origin": "USER",
+  "partitionKeys": {
+    "pk": {
+      "asciiT": "partition_key"
+    }
+  },
+  "clusteringKeys": {
+    "ck": {
+      "asciiT": "clustering_key"
+    }
+  },
+  "newImage": {
+    "valueCells": {
+      "list_col": {
+        "value": {
+          "listT": [
+            {
+              "value": {
+                "textT": "list_item1"
+              },
+              "metadata": null
+            },
+            {
+              "value": {
+                "textT": "list_item2"
+              },
+              "metadata": null
+            }
+          ]
+        },
+        "metadata": null
+      },
+      "set_col": {
+        "value": {
+          "setT": [
+            {
+              "value": {
+                "textT": "set_item1"
+              },
+              "metadata": null
+            },
+            {
+              "value": {
+                "textT": "set_item2"
+              },
+              "metadata": null
+            }
+          ]
+        },
+        "metadata": null
+      },
+      "map_col": {
+        "value": {
+          "mapT": [
+            {
+              "key": {
+                "textT": "key1"
+              },
+              "value": {
+                "textT": "value1"
+              },
+              "metadata": null
+            },
+            {
+              "key": {
+                "textT": "key2"
+              },
+              "value": {
+                "textT": "value2"
+              },
+              "metadata": null
+            }
+          ]
+        },
+        "metadata": null
+      },
+      "udt_col": {
+        "value": {
+          "udtT": {
+            "field1": {
+              "value": {
+                "textT": "udt_value1"
+              },
+              "metadata": null
+            },
+            "field2": {
+              "value": {
+                "textT": "udt_value2"
+              },
+              "metadata": null
+            }
+          }
+        },
+        "metadata": null
+      },
+      "tuple_col": {
+        "value": {
+          "tupleT": [
+            {
+              "value": {
+                "textT": "tuple_item1"
+              },
+              "metadata": null
+            },
+            {
+              "value": {
+                "intT": "123"
+              },
+              "metadata": null
+            }
+          ]
+        },
+        "metadata": null
+      }
+    },
+    "staticCells": {},
+    "rowMetadata": null
+  },
+  "oldImage": null,
+  "sequenceNumber": "TestString"
+}

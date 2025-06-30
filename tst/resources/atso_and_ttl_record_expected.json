@@ -1,0 +1,63 @@
+{
+  "eventVersion": "1.1",
+  "createdAt": 1156377.6,
+  "origin": "USER",
+  "partitionKeys": {
+    "pk": {
+      "asciiT": "partition_key"
+    }
+  },
+  "clusteringKeys": {
+    "ck": {
+      "asciiT": "clustering_key"
+    }
+  },
+  "newImage": {
+    "valueCells": {
+      "text_field": {
+        "value": {
+          "textT": "simple_text_value"
+        },
+        "metadata": {
+          "writeTime": "1234567890",
+          "expirationTime": "1234567899"
+        }
+      },
+      "list_field": {
+        "value": {
+          "listT": [
+            {
+              "value": {
+                "textT": "list_item1"
+              },
+              "metadata": {
+                "writeTime": "1234567891",
+                "expirationTime": "1234567900"
+              }
+            },
+            {
+              "value": {
+                "textT": "list_item2"
+              },
+              "metadata": {
+                "writeTime": "1234567892",
+                "expirationTime": "1234567901"
+              }
+            }
+          ]
+        },
+        "metadata": {
+          "writeTime": "1234567893",
+          "expirationTime": "1234567902"
+        }
+      }
+    },
+    "staticCells": {},
+    "rowMetadata": {
+      "writeTime": "1234567894",
+      "expirationTime": "1234567903"
+    }
+  },
+  "oldImage": null,
+  "sequenceNumber": "TestString"
+}
