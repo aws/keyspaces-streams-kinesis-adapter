@@ -1,0 +1,95 @@
+{
+  "eventVersion": "1.1",
+  "createdAt": 1156377.6,
+  "origin": "USER",
+  "partitionKeys": {
+    "pk": {
+      "asciiT": "partition_key"
+    }
+  },
+  "clusteringKeys": {
+    "ck": {
+      "asciiT": "clustering_key"
+    }
+  },
+  "newImage": {
+    "valueCells": {
+      "max_depth_nested": {
+        "value": {
+          "listT": [
+            {
+              "value": {
+                "setT": [
+                  {
+                    "value": {
+                      "listT": [
+                        {
+                          "value": {
+                            "mapT": [
+                              {
+                                "key": {
+                                  "textT": "level4key1"
+                                },
+                                "value": {
+                                  "setT": [
+                                    {
+                                      "value": {
+                                        "textT": "leaf1"
+                                      },
+                                      "metadata": null
+                                    },
+                                    {
+                                      "value": {
+                                        "textT": "leaf2"
+                                      },
+                                      "metadata": null
+                                    }
+                                  ]
+                                },
+                                "metadata": null
+                              },
+                              {
+                                "key": {
+                                  "textT": "level4key2"
+                                },
+                                "value": {
+                                  "setT": [
+                                    {
+                                      "value": {
+                                        "textT": "leaf1"
+                                      },
+                                      "metadata": null
+                                    },
+                                    {
+                                      "value": {
+                                        "textT": "leaf2"
+                                      },
+                                      "metadata": null
+                                    }
+                                  ]
+                                },
+                                "metadata": null
+                              }
+                            ]
+                          },
+                          "metadata": null
+                        }
+                      ]
+                    },
+                    "metadata": null
+                  }
+                ]
+              },
+              "metadata": null
+            }
+          ]
+        },
+        "metadata": null
+      }
+    },
+    "staticCells": {},
+    "rowMetadata": null
+  },
+  "oldImage": null,
+  "sequenceNumber": "TestString"
+}
