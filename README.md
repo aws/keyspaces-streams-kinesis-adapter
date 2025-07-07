@@ -46,11 +46,11 @@ Keyspaces Streams Kinesis Adapter implements the Amazon Kinesis interface so tha
 ```
 
 [1]: https://docs.aws.amazon.com/keyspaces/latest/devguide/what-is-keyspaces.html
-[2]: https://docs.aws.a2z.com/keyspaces/latest/devguide/cdc_how-it-works.html
-[3]: https://docs.aws.a2z.com/keyspaces/latest/devguide/cdc.html
+[2]: https://docs.aws.amazon.com/keyspaces/latest/devguide/cdc_how-it-works.html
+[3]: https://docs.aws.amazon.com/keyspaces/latest/devguide/cdc_how-to-use.html
 [4]: https://github.com/awslabs/amazon-kinesis-client
 [5]: https://github.com/aws/keyspaces-streams-kinesis-adapter/issues
 [6]: https://docs.aws.amazon.com/accounts/latest/reference/manage-acct-creating.html
 [7]: https://docs.aws.amazon.com/keyspaces/latest/devguide/getting-started.html
-[8]: https://docs.aws.a2z.com/keyspaces/latest/devguide/cdc_how-to-use-kcl.html
-[9]: https://docs.aws.a2z.com/keyspaces/latest/devguide/cdc-kcl-implementation.html
+[8]: https://docs.aws.amazon.com/keyspaces/latest/devguide/cdc_how-to-use-kcl.html
+[9]: https://docs.aws.amazon.com/keyspaces/latest/devguide/cdc-kcl-implementation.html 
