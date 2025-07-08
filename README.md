@@ -25,9 +25,21 @@ Keyspaces Streams Kinesis Adapter implements the Amazon Kinesis interface so tha
 
 • **Minimum requirements** - To utilize this library, your application will need to be on Java 8+. Additionally, your maven version for builds should be 3.0.0+.
 
-• **Install the Keyspaces Streams Kinesis Adapter** - You can build and install Keyspaces Streams Kinesis Adapter to use in your application by following the guidelines in "Building From Source" section.
+• **Install the Keyspaces Streams Kinesis Adapter** - You can build and install Keyspaces Streams Kinesis Adapter to use in your application by following the guidelines in either "Add Maven Dependency" or "Building From Source" sections.
 
 • **Build your first application** - Please review [Keyspaces Streams Kinesis Adapter Details][8] and [Keyspaces Streams Kinesis Adapter Developer Guide][9] that will help you build first application using this adapter.
+
+## Add Maven Dependency
+
+• Add the following to your Maven pom file:
+
+```
+    <dependency>
+        <groupId>software.amazon.keyspaces</groupId>
+        <artifactId>keyspaces-streams-kinesis-adapter</artifactId>
+        <version>1.0.0</version>
+    </dependency>
+```
 
 ## Building From Source
 

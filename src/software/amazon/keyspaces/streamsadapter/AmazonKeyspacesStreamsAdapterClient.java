@@ -148,7 +148,7 @@ public class AmazonKeyspacesStreamsAdapterClient implements KinesisAsyncClient {
      * @param describeStreamRequest Container for the necessary parameters to execute the DescribeStream service method on Keyspaces
      *                              Streams.
      * @return The response from the DescribeStream service method, adapted for use with the AmazonKinesis model.
-     * @throw UnsupportedOperationException since the adapter uses getStream
+     * @throws UnsupportedOperationException since the adapter uses getStream
      */
     @Override
     public CompletableFuture<DescribeStreamResponse> describeStream(
