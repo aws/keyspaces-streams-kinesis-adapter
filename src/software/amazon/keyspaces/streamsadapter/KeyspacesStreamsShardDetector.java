@@ -78,10 +78,6 @@ import java.util.stream.Collectors;
  * Return Shard ◄────────────────────────────────
  * </pre>
  *
- * @param shardId The unique identifier of the shard to retrieve
- * @return The Shard object if found, null otherwise
- * @throws LimitExceededException if Keyspaces API rate limit is exceeded during refresh
- * @throws IllegalStateException if the DescribeStream call returns null
  */
 
 @Slf4j
