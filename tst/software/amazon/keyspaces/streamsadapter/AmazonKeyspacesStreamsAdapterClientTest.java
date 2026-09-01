@@ -34,6 +34,7 @@ import software.amazon.awssdk.services.keyspacesstreams.model.ListStreamsRespons
 import software.amazon.awssdk.services.keyspacesstreams.model.Record;
 import software.amazon.awssdk.services.keyspacesstreams.model.Shard;
 import software.amazon.awssdk.services.keyspacesstreams.model.SequenceNumberRange;
+import software.amazon.awssdk.services.keyspacesstreams.model.ShardFilter;
 import software.amazon.awssdk.services.keyspacesstreams.model.Stream;
 import software.amazon.awssdk.services.keyspacesstreams.model.StreamStatus;
 import software.amazon.awssdk.services.keyspacesstreams.model.ValidationException;
@@ -324,5 +325,99 @@ class AmazonKeyspacesStreamsAdapterClientTest {
                         .build();
 
         assertThrows(UnsupportedOperationException.class, () -> adapterClient.getRecords(kinesisRequest));
+    }
+
+    @Test
+    void testGetStreamWithFilter() {
+        // Setup
+        ShardFilter shardFilter = ShardFilter.builder()
+                .type(software.amazon.awssdk.services.keyspacesstreams.model.ShardFilterType.CHILD_SHARDS)
+                .shardId(SHARD_ID)
+                .build();
+
+        GetStreamResponse expectedResponse = GetStreamResponse.builder()
+                .streamArn(STREAM_ARN)
+                .streamStatus(StreamStatus.ENABLED)
+                .shards(Collections.singletonList(
+                        Shard.builder()
+                                .shardId("child-shard-001")
+                                .parentShardIds(Collections.singletonList(SHARD_ID))
+                                .sequenceNumberRange(SequenceNumberRange.builder()
+                                        .startingSequenceNumber("200")
+                                        .build())
+                                .build()
+                ))
+                .build();
+
+        when(keyspacesStreamsClient.getStream(any(GetStreamRequest.class)))
+                .thenReturn(expectedResponse);
+
+        // Execute
+        GetStreamResponse response = adapterClient.getStreamWithFilter(STREAM_ARN, shardFilter, "test-consumer");
+
+        // Verify
+        assertNotNull(response);
+        assertEquals(1, response.shards().size());
+        assertEquals("child-shard-001", response.shards().get(0).shardId());
+        verify(keyspacesStreamsClient).getStream(any(GetStreamRequest.class));
+    }
+
+    @Test
+    void testGetStreamWithFilterEmptyConsumerId() {
+        // Setup
+        ShardFilter shardFilter = ShardFilter.builder()
+                .type(software.amazon.awssdk.services.keyspacesstreams.model.ShardFilterType.CHILD_SHARDS)
+                .shardId(SHARD_ID)
+                .build();
+
+        GetStreamResponse expectedResponse = GetStreamResponse.builder()
+                .streamArn(STREAM_ARN)
+                .streamStatus(StreamStatus.ENABLED)
+                .shards(Collections.emptyList())
+                .build();
+
+        when(keyspacesStreamsClient.getStream(any(GetStreamRequest.class)))
+                .thenReturn(expectedResponse);
+
+        // Execute
+        GetStreamResponse response = adapterClient.getStreamWithFilter(STREAM_ARN, shardFilter, "");
+
+        // Verify
+        assertNotNull(response);
+        assertTrue(response.shards().isEmpty());
+    }
+
+    @Test
+    void testGetShardIteratorExtractsConsumerId() {
+        // Setup - verify consumerId is extracted from override config and threaded through
+        GetShardIteratorResponse keyspacesResponse = GetShardIteratorResponse.builder()
+                .shardIterator(ITERATOR)
+                .build();
+
+        when(keyspacesStreamsClient.getShardIterator(any(GetShardIteratorRequest.class)))
+                .thenReturn(keyspacesResponse);
+
+        // Build request with consumerId in the API names (as KCL does)
+        software.amazon.awssdk.services.kinesis.model.GetShardIteratorRequest kinesisRequest =
+                software.amazon.awssdk.services.kinesis.model.GetShardIteratorRequest.builder()
+                        .streamName(STREAM_ARN)
+                        .shardId(SHARD_ID)
+                        .shardIteratorType(ShardIteratorType.TRIM_HORIZON)
+                        .overrideConfiguration(
+                                software.amazon.awssdk.awscore.AwsRequestOverrideConfiguration.builder()
+                                        .addApiName(software.amazon.awssdk.core.ApiName.builder()
+                                                .name("KCL-ConsumerId-test-app")
+                                                .version("3.5.1")
+                                                .build())
+                                        .build())
+                        .build();
+
+        software.amazon.awssdk.services.kinesis.model.GetShardIteratorResponse response =
+                adapterClient.getShardIterator(kinesisRequest).join();
+
+        // Verify
+        assertNotNull(response);
+        assertEquals(ITERATOR, response.shardIterator());
+        verify(keyspacesStreamsClient).getShardIterator(any(GetShardIteratorRequest.class));
     }
 }

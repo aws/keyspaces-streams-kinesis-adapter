@@ -20,11 +20,17 @@ import software.amazon.keyspaces.streamsadapter.util.KinesisMapperUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import software.amazon.awssdk.awscore.AwsRequestOverrideConfiguration;
+import software.amazon.awssdk.core.ApiName;
 import software.amazon.awssdk.services.keyspacesstreams.model.GetRecordsRequest;
 import software.amazon.awssdk.services.keyspacesstreams.model.GetRecordsResponse;
+import software.amazon.awssdk.services.keyspacesstreams.model.GetStreamResponse;
 import software.amazon.awssdk.services.keyspacesstreams.model.KeyspacesRow;
 import software.amazon.awssdk.services.keyspacesstreams.model.Record;
+import software.amazon.awssdk.services.keyspacesstreams.model.SequenceNumberRange;
+import software.amazon.awssdk.services.keyspacesstreams.model.Shard;
 import software.amazon.awssdk.services.keyspacesstreams.model.StreamStatus;
+import software.amazon.keyspaces.streamsadapter.adapter.KeyspacesStreamsGetRecordsResponseAdapter;
 import software.amazon.awssdk.services.kinesis.model.DescribeStreamResponse;
 import software.amazon.awssdk.services.kinesis.model.GetShardIteratorRequest;
 import software.amazon.awssdk.services.kinesis.model.GetShardIteratorResponse;
@@ -40,6 +46,7 @@ import software.amazon.kinesis.retrieval.DataFetcherProviderConfig;
 import software.amazon.kinesis.retrieval.DataFetcherResult;
 import software.amazon.kinesis.retrieval.GetRecordsResponseAdapter;
 import software.amazon.kinesis.retrieval.KinesisDataFetcherProviderConfig;
+import software.amazon.kinesis.retrieval.RetrievalConfig;
 import software.amazon.kinesis.retrieval.kpl.ExtendedSequenceNumber;
 
 import java.time.Duration;
@@ -65,6 +72,7 @@ public class KeyspacesStreamsDataFetcherTest {
     private static final String SEQUENCE_NUMBER = "123";
     private static final String ITERATOR = "iterator-123";
     private static final int MAX_RECORDS = 100;
+    private static final String CONSUMER_ID = "consumer-id";
 
     private AmazonKeyspacesStreamsAdapterClient amazonKeyspacesStreamsAdapterClient;
 
@@ -78,7 +86,7 @@ public class KeyspacesStreamsDataFetcherTest {
         amazonKeyspacesStreamsAdapterClient = Mockito.mock(AmazonKeyspacesStreamsAdapterClient.class);
         streamIdentifier = StreamIdentifier.singleStreamInstance(STREAM_NAME);
         metricsFactory = new NullMetricsFactory();
-        dataFetcherProviderConfig = new KinesisDataFetcherProviderConfig(streamIdentifier, SHARD_ID, metricsFactory, MAX_RECORDS, Duration.ofMillis(30000L));
+        dataFetcherProviderConfig = new KinesisDataFetcherProviderConfig(streamIdentifier, SHARD_ID, metricsFactory, MAX_RECORDS, Duration.ofMillis(30000L), CONSUMER_ID);
         keyspacesStreamsDataFetcher = new KeyspacesStreamsDataFetcher(amazonKeyspacesStreamsAdapterClient, dataFetcherProviderConfig);
     }
 
@@ -321,6 +329,12 @@ public class KeyspacesStreamsDataFetcherTest {
     private void mockGetShardIterator(String sequenceNumber, ShardIteratorType iteratorType, String iterator) {
         when(amazonKeyspacesStreamsAdapterClient.getShardIterator(
                 GetShardIteratorRequest.builder()
+                        .overrideConfiguration(AwsRequestOverrideConfiguration.builder()
+                                .addApiName(ApiName.builder()
+                                        .name(CONSUMER_ID)
+                                        .version(RetrievalConfig.KINESIS_CLIENT_LIB_USER_AGENT_VERSION)
+                                        .build())
+                                .build())
                         .streamName(KinesisMapperUtil.createKeyspacesStreamsArnFromKinesisStreamName(STREAM_NAME))
                         .shardId(SHARD_ID)
                         .startingSequenceNumber(sequenceNumber)
@@ -334,6 +348,66 @@ public class KeyspacesStreamsDataFetcherTest {
                                         .build()
                         )
                 );
+    }
+
+    @Test
+    void testGetChildShardsReturnsNullWhenStreamDisabled() throws Exception {
+        GetStreamResponse response = GetStreamResponse.builder()
+                .streamStatus(StreamStatus.DISABLED)
+                .shards(Collections.emptyList())
+                .build();
+        when(amazonKeyspacesStreamsAdapterClient.getStreamWithFilter(any(), any(), any()))
+                .thenReturn(response);
+
+        assertNull(keyspacesStreamsDataFetcher.getChildShards(STREAM_NAME, SHARD_ID));
+    }
+
+    @Test
+    void testGetChildShardsReturnsNullOnException() throws Exception {
+        when(amazonKeyspacesStreamsAdapterClient.getStreamWithFilter(any(), any(), any()))
+                .thenThrow(new RuntimeException("boom"));
+
+        assertNull(keyspacesStreamsDataFetcher.getChildShards(STREAM_NAME, SHARD_ID));
+    }
+
+    @Test
+    void testGetRecordsResponseAtShardEndDiscoversChildShards() throws Exception {
+        GetRecordsRequest request = GetRecordsRequest.builder()
+                .shardIterator(ITERATOR)
+                .maxResults(MAX_RECORDS)
+                .build();
+
+        // Records response at shard end (null nextShardIterator triggers child-shard discovery)
+        KeyspacesStreamsGetRecordsResponseAdapter recordsAdapter = new KeyspacesStreamsGetRecordsResponseAdapter(
+                GetRecordsResponse.builder()
+                        .changeRecords(Collections.emptyList())
+                        .nextShardIterator(null)
+                        .build());
+        when(amazonKeyspacesStreamsAdapterClient.getKeyspacesStreamsRecords(any()))
+                .thenReturn(CompletableFuture.<GetRecordsResponseAdapter>completedFuture(recordsAdapter));
+
+        // Child-shard discovery returns one child shard for the closed shard
+        GetStreamResponse childShardsResponse = GetStreamResponse.builder()
+                .streamStatus(StreamStatus.ENABLED)
+                .shards(Collections.singletonList(
+                        Shard.builder()
+                                .shardId("child-000001")
+                                .parentShardIds(Collections.singletonList(SHARD_ID))
+                                .sequenceNumberRange(SequenceNumberRange.builder()
+                                        .startingSequenceNumber("100")
+                                        .endingSequenceNumber("200")
+                                        .build())
+                                .build()))
+                .build();
+        when(amazonKeyspacesStreamsAdapterClient.getStreamWithFilter(any(), any(), any()))
+                .thenReturn(childShardsResponse);
+
+        GetRecordsResponseAdapter result = keyspacesStreamsDataFetcher.getGetRecordsResponse(request);
+
+        assertNull(result.nextShardIterator());
+        assertEquals(1, result.childShards().size());
+        assertEquals("child-000001", result.childShards().get(0).shardId());
+        assertEquals(SHARD_ID, result.childShards().get(0).parentShards().get(0));
     }
 
     private Record createRecord(String sequenceNumber) {

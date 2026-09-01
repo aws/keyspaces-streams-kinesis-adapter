@@ -18,6 +18,7 @@ package software.amazon.keyspaces.streamsadapter;
 import software.amazon.keyspaces.streamsadapter.adapter.KeyspacesStreamsGetRecordsResponseAdapter;
 import software.amazon.keyspaces.streamsadapter.common.KeyspacesStreamsRequestsBuilder;
 import software.amazon.keyspaces.streamsadapter.util.KinesisMapperUtil;
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Iterables;
 import lombok.AccessLevel;
 import lombok.Data;
@@ -26,13 +27,21 @@ import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.NotNull;
+import software.amazon.awssdk.awscore.AwsRequestOverrideConfiguration;
+import software.amazon.awssdk.core.ApiName;
 import software.amazon.awssdk.core.exception.SdkException;
 
 import software.amazon.awssdk.services.keyspacesstreams.model.GetRecordsRequest;
 import software.amazon.awssdk.services.keyspacesstreams.model.GetRecordsResponse;
+import software.amazon.awssdk.services.keyspacesstreams.model.GetStreamResponse;
+import software.amazon.awssdk.services.keyspacesstreams.model.ShardFilter;
+import software.amazon.awssdk.services.keyspacesstreams.model.ShardFilterType;
+import software.amazon.awssdk.services.keyspacesstreams.model.StreamStatus;
+import software.amazon.awssdk.services.kinesis.model.ChildShard;
 import software.amazon.awssdk.services.kinesis.model.GetShardIteratorRequest;
 import software.amazon.awssdk.services.kinesis.model.GetShardIteratorResponse;
 import software.amazon.awssdk.services.kinesis.model.KinesisException;
+import software.amazon.awssdk.services.kinesis.model.LimitExceededException;
 import software.amazon.awssdk.services.kinesis.model.ResourceNotFoundException;
 import software.amazon.awssdk.services.kinesis.model.ShardIteratorType;
 import software.amazon.kinesis.common.InitialPositionInStreamExtended;
@@ -45,15 +54,19 @@ import software.amazon.kinesis.retrieval.AWSExceptionManager;
 import software.amazon.kinesis.retrieval.DataFetcherProviderConfig;
 import software.amazon.kinesis.retrieval.DataFetcherResult;
 import software.amazon.kinesis.retrieval.GetRecordsResponseAdapter;
+import software.amazon.kinesis.retrieval.RetrievalConfig;
 import software.amazon.kinesis.retrieval.RetryableRetrievalException;
 import software.amazon.kinesis.retrieval.kpl.ExtendedSequenceNumber;
 import software.amazon.kinesis.retrieval.polling.DataFetcher;
 
 import java.time.Duration;
 import java.util.Collections;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static software.amazon.keyspaces.streamsadapter.util.KinesisMapperUtil.createKeyspacesStreamsArnFromKinesisStreamName;
 
@@ -61,6 +74,10 @@ import static software.amazon.keyspaces.streamsadapter.util.KinesisMapperUtil.cr
 public class KeyspacesStreamsDataFetcher implements DataFetcher {
     private static final String METRICS_PREFIX = "KeyspacesStreamsDataFetcher";
     private static final String OPERATION = "ProcessTask";
+
+    protected static final int MAX_GET_STREAM_ATTEMPTS_FOR_CHILD_SHARD_DISCOVERY_ON_NO_RECORDS = 10;
+    private static final int GET_STREAM_FOR_CHILD_SHARD_DISCOVERY_BACKOFF_ON_NO_RECORDS_MAX_DELAY_IN_MILLIS = 1000;
+    private static final int GET_STREAM_FOR_CHILD_SHARD_DISCOVERY_BACKOFF_ON_NO_RECORDS_BASE_DELAY_IN_MILLIS = 50;
 
     @NonNull
     private final AmazonKeyspacesStreamsAdapterClient amazonKeyspacesStreamsAdapterClient;
@@ -92,6 +109,8 @@ public class KeyspacesStreamsDataFetcher implements DataFetcher {
     final Duration maxFutureWait;
 
     private InitialPositionInStreamExtended initialPositionInStream;
+
+    private String consumerId;
 
     private static final AWSExceptionManager AWS_EXCEPTION_MANAGER = createExceptionManager();
     private static AWSExceptionManager createExceptionManager() {
@@ -151,6 +170,7 @@ public class KeyspacesStreamsDataFetcher implements DataFetcher {
                 KinesisMapperUtil.createKeyspacesStreamsArnFromKinesisStreamName(streamIdentifier.streamName()),
                 shardId);
         this.maxFutureWait = keyspacesStreamsDataFetcherProviderConfig.getKinesisRequestTimeout();
+        this.consumerId = keyspacesStreamsDataFetcherProviderConfig.consumerId();
     }
 
     @Override
@@ -196,7 +216,13 @@ public class KeyspacesStreamsDataFetcher implements DataFetcher {
         }
         GetShardIteratorRequest.Builder getShardIteratorRequestBuilder = GetShardIteratorRequest.builder()
                 .streamName(createKeyspacesStreamsArnFromKinesisStreamName(streamIdentifier.streamName()))
-                .shardId(shardId);
+                .shardId(shardId)
+                .overrideConfiguration(AwsRequestOverrideConfiguration.builder()
+                        .addApiName(ApiName.builder()
+                                .name(consumerId)
+                                .version(RetrievalConfig.KINESIS_CLIENT_LIB_USER_AGENT_VERSION)
+                                .build())
+                        .build());
 
         if (Objects.equals(ExtendedSequenceNumber.LATEST.sequenceNumber(), sequenceNumber)) {
             getShardIteratorRequestBuilder.shardIteratorType(ShardIteratorType.LATEST);
@@ -283,11 +309,85 @@ public class KeyspacesStreamsDataFetcher implements DataFetcher {
     }
 
     public GetRecordsResponseAdapter getGetRecordsResponse(GetRecordsRequest request) throws ExecutionException, InterruptedException, TimeoutException {
-        return amazonKeyspacesStreamsAdapterClient.getKeyspacesStreamsRecords(request).get();
+        KeyspacesStreamsGetRecordsResponseAdapter getRecordsResponseAdapter =
+                (KeyspacesStreamsGetRecordsResponseAdapter) amazonKeyspacesStreamsAdapterClient
+                        .getKeyspacesStreamsRecords(request).get();
+
+        // We have reached the end of the shard, call GetStream API with ShardFilter parameter
+        if (Objects.isNull(getRecordsResponseAdapter.nextShardIterator())) {
+            GetStreamResponse getStreamResponse = getChildShards(streamIdentifier.streamName(), shardId);
+            if (getStreamResponse != null) {
+                List<ChildShard> childShards = getStreamResponse.shards().stream()
+                        .map(KinesisMapperUtil::convertKeyspacesShardToKinesisShard)
+                        .map(shard -> ChildShard.builder()
+                                .shardId(shard.shardId())
+                                .parentShards(
+                                        Stream.of(shard.parentShardId(), shard.adjacentParentShardId())
+                                                .filter(Objects::nonNull)
+                                                .collect(Collectors.toList()))
+                                .hashKeyRange(shard.hashKeyRange())
+                                .build()
+                        )
+                        .collect(Collectors.toList());
+                getRecordsResponseAdapter.addChildShards(childShards);
+            }
+        }
+        return getRecordsResponseAdapter;
+    }
+
+    @VisibleForTesting
+    protected GetStreamResponse getChildShards(String streamName, String shardId) throws InterruptedException {
+        int attempts = 0;
+        do {
+            try {
+                GetStreamResponse getStreamResponse = amazonKeyspacesStreamsAdapterClient
+                        .getStreamWithFilter(
+                                createKeyspacesStreamsArnFromKinesisStreamName(streamName),
+                                ShardFilter.builder()
+                                        .type(ShardFilterType.CHILD_SHARDS)
+                                        .shardId(shardId)
+                                        .build(),
+                                consumerId);
+
+                if (!getStreamResponse.shards().isEmpty()) {
+                    return getStreamResponse;
+                }
+
+                // if stream is disabled and no child shards are found, we will not retry for this case.
+                if (StreamStatus.DISABLED.toString().equals(getStreamResponse.streamStatusAsString())) {
+                    return null;
+                }
+            } catch (LimitExceededException e) {
+                log.error("Caught limit exceeded exception while getting child shards for stream and shard: {}",
+                        streamAndShardId, e);
+                // fall through to backoff and retry
+            } catch (Exception e) {
+                // if there is any exception, fall back to paginated GetStream call for shard discovery
+                log.error("Caught exception while getting child shards from stream and shard: {}",
+                        streamAndShardId, e);
+                return null;
+            }
+            // Calculate exponential backoff: 50ms, 100ms, 200ms, 400ms, 800ms, 1000ms, ...
+            long delayMillis =
+                    Math.min(GET_STREAM_FOR_CHILD_SHARD_DISCOVERY_BACKOFF_ON_NO_RECORDS_BASE_DELAY_IN_MILLIS
+                                    * (1L << attempts),
+                            GET_STREAM_FOR_CHILD_SHARD_DISCOVERY_BACKOFF_ON_NO_RECORDS_MAX_DELAY_IN_MILLIS);
+
+            // Add jitter (±20% of delay)
+            long jitter = (long) (delayMillis * 0.2 * (Math.random() - 0.5) * 2);
+            delayMillis += jitter;
+
+            attempts++;
+            if (attempts < MAX_GET_STREAM_ATTEMPTS_FOR_CHILD_SHARD_DISCOVERY_ON_NO_RECORDS) {
+                Thread.sleep(delayMillis);
+            }
+        } while (attempts < MAX_GET_STREAM_ATTEMPTS_FOR_CHILD_SHARD_DISCOVERY_ON_NO_RECORDS);
+        log.error("Finding child shards for stream and shard: {} failed after {} attempts", streamAndShardId, attempts);
+        return null;
     }
 
     public GetRecordsRequest keyspacesGetRecordsRequest(String nextIterator) {
-        return KeyspacesStreamsRequestsBuilder.getRecordsRequestBuilder()
+        return KeyspacesStreamsRequestsBuilder.getRecordsRequestBuilder(consumerId)
                 .shardIterator(nextIterator)
                 .maxResults(maxRecords)
                 .build();

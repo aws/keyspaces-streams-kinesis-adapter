@@ -28,6 +28,8 @@ import software.amazon.kinesis.common.StreamConfig;
 import software.amazon.kinesis.common.StreamIdentifier;
 import software.amazon.kinesis.coordinator.CoordinatorConfig;
 import software.amazon.kinesis.coordinator.Scheduler;
+import software.amazon.kinesis.coordinator.streamInfo.StreamIdOnboardingState;
+import software.amazon.kinesis.coordinator.streamInfo.StreamInfoMode;
 import software.amazon.kinesis.leases.LeaseManagementConfig;
 import software.amazon.kinesis.lifecycle.LifecycleConfig;
 import software.amazon.kinesis.metrics.MetricsConfig;
@@ -46,6 +48,9 @@ import java.util.stream.Collectors;
 
 @Slf4j
 public class StreamsSchedulerFactory {
+
+    static final String STREAM_TYPE_KEYSPACES_STREAMS = "Keyspaces_Streams";
+
     /**
      * Factory function for customers to create a stream tracker to consume multiple Keyspaces Streams from a single application.
      * @param keyspacesStreamArns
@@ -66,7 +71,7 @@ public class StreamsSchedulerFactory {
         }
         List<StreamConfig> streamConfigList = keyspacesStreamArns.stream()
                 .map(streamArn -> new StreamConfig(
-                        StreamIdentifier.multiStreamInstance(KinesisMapperUtil.createKinesisStreamIdentifierFromKeyspacesStreamsArn(streamArn, true)),
+                        StreamIdentifier.multiStreamInstance(KinesisMapperUtil.createKinesisStreamIdentifierFromKeyspacesStreamsArn(streamArn, true), STREAM_TYPE_KEYSPACES_STREAMS),
                         initialPositionInStreamExtended,
                         null
                 ))
@@ -85,7 +90,11 @@ public class StreamsSchedulerFactory {
         if (!KinesisMapperUtil.isValidKeyspacesStreamArn(keyspacesStreamArn)) {
             throw new IllegalArgumentException("Invalid Keyspaces Stream ARN: " + keyspacesStreamArn);
         }
-        return new SingleStreamTracker(KinesisMapperUtil.createKinesisStreamIdentifierFromKeyspacesStreamsArn(keyspacesStreamArn, false), initialPositionInStreamExtended);
+        return new SingleStreamTracker(
+                StreamIdentifier.singleStreamInstance(
+                        KinesisMapperUtil.createKinesisStreamIdentifierFromKeyspacesStreamsArn(keyspacesStreamArn, false),
+                        STREAM_TYPE_KEYSPACES_STREAMS),
+                initialPositionInStreamExtended);
     }
 
     /**
@@ -200,6 +209,14 @@ public class StreamsSchedulerFactory {
                 );
         leaseManagementConfig.leaseManagementFactory(keyspacesStreamsLeaseManagementFactory);
         leaseManagementConfig.consumerTaskFactory(new KeyspacesStreamsConsumerTaskFactory());
+
+        if (!leaseManagementConfig.streamInfoMode().equals(StreamInfoMode.DISABLED)
+                || !leaseManagementConfig.streamIdOnboardingState().equals(StreamIdOnboardingState.NOT_ONBOARDED)) {
+            log.warn("StreamInfoMode and StreamIdOnboardingState are not supported by the Keyspaces Streams adapter. "
+                    + "Overriding to DISABLED for streamInfoMode and NOT_ONBOARDED for streamIdOnboardingState.");
+        }
+        leaseManagementConfig.streamInfoMode(StreamInfoMode.DISABLED);
+        leaseManagementConfig.streamIdOnboardingState(StreamIdOnboardingState.NOT_ONBOARDED);
 
         return new Scheduler(
                 checkpointConfig,

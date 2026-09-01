@@ -72,11 +72,57 @@ public final class KeyspacesStreamsRequestsBuilder {
         return appendUserAgent(GetStreamRequest.builder());
     }
 
+    /**
+     * Creates a builder for ListStreams request with consumer id in the user agent.
+     *
+     * @return ListStreamsRequest builder with user agent configuration
+     */
+    public static ListStreamsRequest.Builder listStreamsRequestBuilder(String consumerId) {
+        return appendUserAgent(ListStreamsRequest.builder(), consumerId);
+    }
+
+    /**
+     * Creates a builder for GetRecords request with consumer id in the user agent.
+     *
+     * @return GetRecordsRequest builder with user agent configuration
+     */
+    public static GetRecordsRequest.Builder getRecordsRequestBuilder(String consumerId) {
+        return appendUserAgent(GetRecordsRequest.builder(), consumerId);
+    }
+
+    /**
+     * Creates a builder for GetShardIterator request with consumer id in the user agent.
+     *
+     * @return GetShardIteratorRequest builder with user agent configuration
+     */
+    public static GetShardIteratorRequest.Builder getShardIteratorRequestBuilder(String consumerId) {
+        return appendUserAgent(GetShardIteratorRequest.builder(), consumerId);
+    }
+
+    /**
+     * Creates a builder for GetStream request with consumer id in the user agent.
+     *
+     * @return GetStreamRequest builder with user agent configuration
+     */
+    public static GetStreamRequest.Builder getStreamRequestBuilder(String consumerId) {
+        return appendUserAgent(GetStreamRequest.builder(), consumerId);
+    }
+
     @SuppressWarnings("unchecked")
     private static <T extends AwsRequest.Builder> T appendUserAgent(final T builder) {
         return (T) builder.overrideConfiguration(AwsRequestOverrideConfiguration.builder()
                 .addApiName(ApiName.builder()
                         .name(RetrievalConfig.KINESIS_CLIENT_LIB_USER_AGENT)
+                        .version(RetrievalConfig.KINESIS_CLIENT_LIB_USER_AGENT_VERSION)
+                        .build())
+                .build());
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T extends AwsRequest.Builder> T appendUserAgent(final T builder, String consumerId) {
+        return (T) builder.overrideConfiguration(AwsRequestOverrideConfiguration.builder()
+                .addApiName(ApiName.builder()
+                        .name(String.format("%s-%s", consumerId, RetrievalConfig.KINESIS_CLIENT_LIB_USER_AGENT))
                         .version(RetrievalConfig.KINESIS_CLIENT_LIB_USER_AGENT_VERSION)
                         .build())
                 .build());

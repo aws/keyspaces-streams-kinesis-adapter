@@ -40,6 +40,7 @@ public class KeyspacesCellValueSerializer extends JsonSerializer<KeyspacesCellVa
     public static final String DATE = "dateT";
     public static final String DECIMAL = "decimalT";
     public static final String DOUBLE = "doubleT";
+    public static final String DURATION = "durationT";
     public static final String FLOAT = "floatT";
     public static final String INET = "inetT";
     public static final String INT = "intT";
@@ -70,6 +71,7 @@ public class KeyspacesCellValueSerializer extends JsonSerializer<KeyspacesCellVa
         if (value.dateT() != null) gen.writeStringField(DATE, value.dateT());
         if (value.decimalT() != null) gen.writeStringField(DECIMAL, value.decimalT());
         if (value.doubleT() != null) gen.writeStringField(DOUBLE, value.doubleT());
+        if (value.durationT() != null) gen.writeStringField(DURATION, value.durationT());
         if (value.floatT() != null) gen.writeStringField(FLOAT, value.floatT());
         if (value.inetT() != null) gen.writeStringField(INET, value.inetT());
         if (value.intT() != null) gen.writeStringField(INT, value.intT());

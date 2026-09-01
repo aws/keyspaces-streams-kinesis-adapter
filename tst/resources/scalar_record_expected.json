@@ -56,6 +56,12 @@
         },
         "metadata": null
       },
+      "duration_col": {
+        "value": {
+          "durationT": "1mo2d12h30m"
+        },
+        "metadata": null
+      },
       "float_col": {
         "value": {
           "floatT": "3.4028235E38"

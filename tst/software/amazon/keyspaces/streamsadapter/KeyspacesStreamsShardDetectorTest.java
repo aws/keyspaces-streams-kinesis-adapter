@@ -573,4 +573,87 @@ public class KeyspacesStreamsShardDetectorTest {
         assertEquals(null, leaf.sequenceNumberRange().endingSequenceNumber(),
                 "Leaf shard " + shardId + " should be open");
     }
+
+    @Test
+    void testListShardsWithConsumerId() {
+        // Setup
+        software.amazon.awssdk.services.keyspacesstreams.model.Shard keyspacesShard =
+                software.amazon.awssdk.services.keyspacesstreams.model.Shard.builder()
+                        .shardId("shard-1")
+                        .parentShardIds(Collections.emptyList())
+                        .sequenceNumberRange(software.amazon.awssdk.services.keyspacesstreams.model.SequenceNumberRange.builder()
+                                .startingSequenceNumber("100")
+                                .build())
+                        .build();
+
+        GetStreamResponse response = GetStreamResponse.builder()
+                .streamArn(STREAM_ARN)
+                .streamStatus(StreamStatus.ENABLED)
+                .shards(Collections.singletonList(keyspacesShard))
+                .build();
+
+        when(keyspacesStreamsClient.getStream(any(GetStreamRequest.class)))
+                .thenReturn(CompletableFuture.supplyAsync(() -> response));
+
+        // Execute
+        List<Shard> shards = shardDetector.listShards("test-consumer-id");
+
+        // Verify
+        assertNotNull(shards);
+        assertEquals(1, shards.size());
+        assertEquals("shard-1", shards.get(0).shardId());
+        verify(keyspacesStreamsClient).getStream(any(GetStreamRequest.class));
+    }
+
+    @Test
+    void testListShardsWithFilterSuccess() {
+        // Setup
+        software.amazon.awssdk.services.keyspacesstreams.model.Shard childShard =
+                software.amazon.awssdk.services.keyspacesstreams.model.Shard.builder()
+                        .shardId("child-shard-001")
+                        .parentShardIds(Collections.singletonList("parent-shard-001"))
+                        .sequenceNumberRange(software.amazon.awssdk.services.keyspacesstreams.model.SequenceNumberRange.builder()
+                                .startingSequenceNumber("200")
+                                .build())
+                        .build();
+
+        GetStreamResponse response = GetStreamResponse.builder()
+                .streamArn(STREAM_ARN)
+                .streamStatus(StreamStatus.ENABLED)
+                .shards(Collections.singletonList(childShard))
+                .build();
+
+        when(keyspacesStreamsClient.getStreamWithFilter(any(), any(), any())).thenReturn(response);
+
+        // Execute
+        software.amazon.awssdk.services.kinesis.model.ShardFilter shardFilter =
+                software.amazon.awssdk.services.kinesis.model.ShardFilter.builder()
+                        .type("CHILD_SHARDS")
+                        .shardId("parent-shard-001")
+                        .build();
+        List<Shard> result = shardDetector.listShardsWithFilter(shardFilter, "test-consumer");
+
+        // Verify
+        assertNotNull(result);
+        assertEquals(1, result.size());
+        assertEquals("child-shard-001", result.get(0).shardId());
+    }
+
+    @Test
+    void testListShardsWithFilterReturnsNullOnException() {
+        // Setup
+        when(keyspacesStreamsClient.getStreamWithFilter(any(), any(), any()))
+                .thenThrow(new RuntimeException("service error"));
+
+        // Execute
+        software.amazon.awssdk.services.kinesis.model.ShardFilter shardFilter =
+                software.amazon.awssdk.services.kinesis.model.ShardFilter.builder()
+                        .type("CHILD_SHARDS")
+                        .shardId("parent-shard-001")
+                        .build();
+        List<Shard> result = shardDetector.listShardsWithFilter(shardFilter, "test-consumer");
+
+        // Verify
+        assertNull(result);
+    }
 }

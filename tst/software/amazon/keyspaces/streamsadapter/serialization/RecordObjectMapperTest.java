@@ -148,6 +148,10 @@ public class RecordObjectMapperTest {
                 .value(KeyspacesCellValue.builder().doubleT("1.7976").build())
                 .build());
 
+        valueCells.put("duration_col", KeyspacesCell.builder()
+                .value(KeyspacesCellValue.builder().durationT("1mo2d12h30m").build())
+                .build());
+
         valueCells.put("float_col", KeyspacesCell.builder()
                 .value(KeyspacesCellValue.builder().floatT("3.4028235E38").build())
                 .build());

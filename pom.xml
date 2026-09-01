@@ -6,7 +6,7 @@
     <artifactId>keyspaces-streams-kinesis-adapter</artifactId>
     <packaging>jar</packaging>
     <name>Keyspaces Streams Adapter for Java</name>
-    <version>1.0.0</version>
+    <version>1.1.0</version>
     <description>The Keyspaces Streams Adapter implements the AmazonKinesis interface so that your application can use KCL to consume and process data from a Keyspaces stream.</description>
     <url>https://aws.amazon.com/keyspaces</url>
 
@@ -35,13 +35,17 @@
             <name>Claire Zhang</name>
             <email>cllzhang@amazon.com</email>
         </developer>
+        <developer>
+            <name>Lakshmi Chandra</name>
+            <email>chlaksh@amazon.com</email>
+        </developer>
     </developers>
 
     <properties>
-        <software-kinesis.version>3.1.0</software-kinesis.version>
+        <software-kinesis.version>3.5.1</software-kinesis.version>
         <gpg.skip>true</gpg.skip>
         <maven.dependency.version>3.0.0</maven.dependency.version>
-        <awssdk.version>2.31.72</awssdk.version>
+        <awssdk.version>2.42.4</awssdk.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
@@ -79,7 +83,7 @@
         <dependency>
             <groupId>com.fasterxml.jackson.datatype</groupId>
             <artifactId>jackson-datatype-jsr310</artifactId>
-            <version>2.12.3</version>
+            <version>2.21.5</version>
         </dependency>
 
         <dependency>

@@ -16,7 +16,6 @@
 package software.amazon.keyspaces.streamsadapter.util;
 
 import org.junit.jupiter.api.Test;
-import software.amazon.kinesis.exceptions.internal.KinesisClientLibIOException;
 import software.amazon.kinesis.leases.Lease;
 import software.amazon.kinesis.leases.MultiStreamLease;
 
@@ -95,7 +94,7 @@ class StreamsLeaseCleanupValidatorTest {
         lease.parentShardIds(new HashSet<>(Arrays.asList("shard-1", "shard-2")));
         Set<String> currentShardIds = new HashSet<>(Arrays.asList("shard-1", "shard-4"));
 
-        Assertions.assertThrows(KinesisClientLibIOException.class, () ->
+        Assertions.assertFalse(() ->
                 StreamsLeaseCleanupValidator.isCandidateForCleanup(lease, currentShardIds, false));
     }
 
@@ -107,7 +106,7 @@ class StreamsLeaseCleanupValidatorTest {
         lease.parentShardIds(new HashSet<>(Arrays.asList("shard-1", "shard-2")));
         Set<String> currentShardIds = new HashSet<>(Arrays.asList("shard-1", "shard-4"));
 
-        Assertions.assertThrows(KinesisClientLibIOException.class, () ->
+        Assertions.assertFalse(() ->
                 StreamsLeaseCleanupValidator.isCandidateForCleanup(lease, currentShardIds, true));
     }
 

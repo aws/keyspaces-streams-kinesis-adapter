@@ -33,6 +33,7 @@ import software.amazon.awssdk.services.kinesis.model.LimitExceededException;
 import software.amazon.awssdk.services.kinesis.model.ResourceInUseException;
 import software.amazon.awssdk.services.kinesis.model.ResourceNotFoundException;
 import software.amazon.awssdk.services.kinesis.model.Shard;
+import software.amazon.awssdk.services.kinesis.model.ShardFilter;
 import software.amazon.awssdk.utils.CollectionUtils;
 import software.amazon.kinesis.common.StreamIdentifier;
 import software.amazon.kinesis.leases.ShardDetector;
@@ -102,6 +103,7 @@ public class KeyspacesStreamsShardDetector implements ShardDetector {
     @Getter(AccessLevel.PACKAGE)
     private final AtomicInteger cacheMisses = new AtomicInteger(0);
 
+    private static final String DEFAULT_CONSUMER_ID = "";
     private static final AWSExceptionManager AWS_EXCEPTION_MANAGER;
 
     static {
@@ -145,7 +147,7 @@ public class KeyspacesStreamsShardDetector implements ShardDetector {
 
                     if (shard == null) {
                         log.info("Too many shard map cache misses or cache is out of date -- forcing a refresh");
-                        describeStream();
+                        describeStream(DEFAULT_CONSUMER_ID);
                         shard = cachedShardMap.get(shardId);
 
                         if (shard == null) {
@@ -176,12 +178,54 @@ public class KeyspacesStreamsShardDetector implements ShardDetector {
     @Override
     @Synchronized
     public List<Shard> listShards() {
-        DescribeStreamResult describeStreamResult = describeStream();
+        DescribeStreamResult describeStreamResult = describeStream(DEFAULT_CONSUMER_ID);
         return describeStreamResult.getShards();
+    }
+
+    @Override
+    @Synchronized
+    public List<Shard> listShards(String consumerId) {
+        DescribeStreamResult describeStreamResult = describeStream(consumerId);
+        return describeStreamResult.getShards();
+    }
+
+    @Override
+    public List<Shard> listShardsWithFilter(ShardFilter shardFilter, String consumerId) {
+        String streamArn = KinesisMapperUtil.createKeyspacesStreamsArnFromKinesisStreamName(this.streamIdentifier.streamName());
+        try {
+            GetStreamResponse getStreamResponse = this.kinesisAsyncClient.getStreamWithFilter(
+                    streamArn,
+                    software.amazon.awssdk.services.keyspacesstreams.model.ShardFilter.builder()
+                            .type(shardFilter.typeAsString())
+                            .shardId(shardFilter.shardId())
+                            .build(),
+                    consumerId);
+            log.debug("Fetched childShards for shard: {} Number of childShards are: {}",
+                    shardFilter.shardId(), getStreamResponse.shards().size());
+            return getStreamResponse.shards().stream()
+                    .map(KinesisMapperUtil::convertKeyspacesShardToKinesisShard)
+                    .collect(Collectors.toList());
+        } catch (ResourceNotFoundException e) {
+            log.error("Shard not found during child-shard discovery for stream and shard: {}:{}",
+                    streamArn, shardFilter.shardId(), e);
+        } catch (LimitExceededException e) {
+            log.error("Caught limit exceeded exception while getting child shards for stream and shard: {}:{}",
+                    streamArn, shardFilter.shardId(), e);
+        } catch (Exception e) {
+            // if there is any exception, fall back to paginated GetStream call for shard discovery
+            log.error("Caught exception while getting child shards from stream and shard: {}:{}",
+                    streamArn, shardFilter.shardId(), e);
+        }
+        return null;
     }
 
     @Synchronized
     public DescribeStreamResult describeStream() {
+        return describeStream(DEFAULT_CONSUMER_ID);
+    }
+
+    @Synchronized
+    public DescribeStreamResult describeStream(String consumerId) {
         ShardGraphTracker shardTracker = new ShardGraphTracker();
         DescribeStreamResult describeStreamResult = new DescribeStreamResult();
         GetStreamResponse getStreamResponse;
@@ -189,7 +233,7 @@ public class KeyspacesStreamsShardDetector implements ShardDetector {
 
         // Phase 1: Collect all shards from Paginations.
         do {
-            getStreamResponse = getStreamResponse(nextToken);
+            getStreamResponse = getStreamResponse(nextToken, consumerId);
 
             // Convert Keyspaces shards to Kinesis shards and collect them
             List<Shard> kinesisShards = getStreamResponse.shards().stream()
@@ -220,9 +264,9 @@ public class KeyspacesStreamsShardDetector implements ShardDetector {
         return describeStreamResult;
     }
 
-    private GetStreamResponse getStreamResponse(String nextToken) {
+    private GetStreamResponse getStreamResponse(String nextToken, String consumerId) {
         String streamArn = KinesisMapperUtil.createKeyspacesStreamsArnFromKinesisStreamName(this.streamIdentifier.streamName());
-        GetStreamRequest getStreamRequest = KeyspacesStreamsRequestsBuilder.getStreamRequestBuilder()
+        GetStreamRequest getStreamRequest = KeyspacesStreamsRequestsBuilder.getStreamRequestBuilder(consumerId)
                 .streamArn(streamArn)
                 .nextToken(nextToken)
                 .build();
