@@ -20,7 +20,10 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
+import software.amazon.awssdk.services.kinesis.model.ChildShard;
+import software.amazon.awssdk.services.kinesis.model.HashKeyRange;
 import software.amazon.awssdk.services.kinesis.model.Shard;
+import software.amazon.keyspaces.streamsadapter.util.KinesisMapperUtil;
 import software.amazon.kinesis.common.InitialPositionInStream;
 import software.amazon.kinesis.common.InitialPositionInStreamExtended;
 import software.amazon.kinesis.common.StreamIdentifier;
@@ -53,6 +56,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
@@ -611,6 +615,30 @@ public class KeyspacesStreamsShardSyncerTest {
         assertEquals(0L, lease.ownerSwitchesSinceCheckpoint());
     }
 
+    @Test
+    void testCreateLeaseForChildShardInMultiStreamMode() throws Exception {
+        String streamArn = "arn:aws:cassandra:us-west-2:123456789012:/keyspace/TestKeyspace/table/TestTable/stream/2024-02-03T00:00:00.000";
+        String multiStreamId = KinesisMapperUtil.createKinesisStreamIdentifierFromKeyspacesStreamsArn(streamArn, true);
+        StreamIdentifier streamIdentifier = StreamIdentifier.multiStreamInstance(multiStreamId);
+        KeyspacesStreamsShardSyncer multiStreamSyncer = new KeyspacesStreamsShardSyncer(true, multiStreamId);
+
+        String parentShardId = "shardId-000000000000-001";
+        String childShardId = "shardId-000000000000-002";
+        ChildShard childShard = ChildShard.builder()
+                .shardId(childShardId)
+                .parentShards(Collections.singletonList(parentShardId))
+                .hashKeyRange(HashKeyRange.builder().startingHashKey("0").endingHashKey("100").build())
+                .build();
+
+        Lease lease = multiStreamSyncer.createLeaseForChildShard(childShard, streamIdentifier);
+
+        assertInstanceOf(MultiStreamLease.class, lease);
+        MultiStreamLease multiStreamLease = (MultiStreamLease) lease;
+        assertEquals(childShardId, multiStreamLease.shardId());
+        assertEquals(Collections.singleton(parentShardId), new HashSet<>(multiStreamLease.parentShardIds()));
+        assertEquals(MultiStreamLease.getLeaseKey(streamIdentifier.serialize(), childShardId), multiStreamLease.leaseKey());
+    }
+
     private void verifyMultiStreamLease(MultiStreamLease lease,
                                         String expectedShardId,
                                         Set<String> expectedParentShardIds,
@@ -798,12 +826,17 @@ public class KeyspacesStreamsShardSyncerTest {
         List<Shard> currentShards = Arrays.asList(grandparent, parent, child1, child2, independent);
 
         // Setup existing leases in the lease table
+        Set<String> childShardIds = new HashSet<>();
+        childShardIds.add(child1ShardId);
+        childShardIds.add(child2ShardId);
+
         // 1. Active shard lease from current stream
         MultiStreamLease currentActiveLease = createTestLease(
                 currentStreamArn,
                 child1ShardId,
                 ExtendedSequenceNumber.TRIM_HORIZON,
-                parentShardId
+                parentShardId,
+                childShardIds
         );
 
         // 2. Stale shard lease from current stream (should be deleted)
@@ -811,6 +844,7 @@ public class KeyspacesStreamsShardSyncerTest {
                 currentStreamArn,
                 staleShardId,
                 ExtendedSequenceNumber.SHARD_END,
+                null,
                 null
         );
 
@@ -819,6 +853,7 @@ public class KeyspacesStreamsShardSyncerTest {
                 otherStreamArn,
                 "shardId-000000000000000000007-other",
                 ExtendedSequenceNumber.TRIM_HORIZON,
+                null,
                 null
         );
 
@@ -874,39 +909,49 @@ public class KeyspacesStreamsShardSyncerTest {
         List<Shard> currentShards = Arrays.asList(parent, child1, child2, grandChild1, grandChild2);
 
         // Setup leases for stream1 (current stream)
+        Set<String> childShardIds = new HashSet<>();
+        childShardIds.add(child1ShardId);
+        childShardIds.add(child2ShardId);
+
         // Parent lease - completed
         Lease parentLease = createCompletedLease(
                 stream1Arn,
                 parentShardId,
-                null  // no parent
+                null,  // no parent
+                childShardIds
         );
 
         // Child leases - both completed
         Lease child1Lease = createCompletedLease(
                 stream1Arn,
                 child1ShardId,
-                parentShardId
+                parentShardId,
+                Collections.singleton(grandChild1ShardId)
         );
 
         Lease child2Lease = createCompletedLease(
                 stream1Arn,
                 child2ShardId,
-                parentShardId
+                parentShardId,
+                Collections.singleton(grandChild2ShardId)
         );
 
-        // Grandchild leases - both active at TRIM_HORIZON
+        // Grandchild lease 1 - active at TRIM_HORIZON
         Lease grandChild1Lease = createTestLease(
                 stream1Arn,
                 grandChild1ShardId,
                 ExtendedSequenceNumber.TRIM_HORIZON,  // active lease
-                child1ShardId
+                child1ShardId,
+                null
         );
 
+        // Grandchild lease 2 - completed at SHARD_END
         Lease grandChild2Lease = createTestLease(
                 stream1Arn,
                 grandChild2ShardId,
-                ExtendedSequenceNumber.TRIM_HORIZON,  // active lease
-                child2ShardId
+                ExtendedSequenceNumber.SHARD_END,  // completed
+                child2ShardId,
+                null
         );
 
         // Setup current stream leases
@@ -939,9 +984,10 @@ public class KeyspacesStreamsShardSyncerTest {
         // Should delete parent lease since all its children are at SHARD_END and have active children
         verify(leaseRefresher).deleteLease(parentLease);
 
-        // Should NOT delete child leases since they have active children
+        // Should not delete child1 lease since its child (grandChild1) is at TRIM_HORIZON
         verify(leaseRefresher, never()).deleteLease(child1Lease);
-        verify(leaseRefresher, never()).deleteLease(child2Lease);
+        // Should delete child2 lease since its child (grandChild2) is at SHARD_END and its parent was deleted first
+        verify(leaseRefresher, times(1)).deleteLease(child2Lease);
 
         // Should NOT delete grandchild leases since they're active
         verify(leaseRefresher, never()).deleteLease(grandChild1Lease);
@@ -992,23 +1038,29 @@ public class KeyspacesStreamsShardSyncerTest {
 
         // Setup leases
         // Grandparent lease - completed
+        Set<String> grandParentChildShardIds = new HashSet<>();
+        grandParentChildShardIds.add(parentShardId1);
+        grandParentChildShardIds.add(parentShardId2);
         MultiStreamLease grandparentLease = createCompletedLease(
                 streamArn,
                 grandparentShardId,
-                null  // no parent
+                null,  // no parent
+                grandParentChildShardIds
         );
 
         // Parent leases - all completed
         MultiStreamLease parentLease1 = createCompletedLease(
                 streamArn,
                 parentShardId1,
-                grandparentShardId
+                grandparentShardId,
+                new HashSet<>(Arrays.asList(childShardId1, childShardId2))
         );
 
         MultiStreamLease parentLease2 = createCompletedLease(
                 streamArn,
                 parentShardId2,
-                grandparentShardId
+                grandparentShardId,
+                new HashSet<>(Arrays.asList(childShardId3, childShardId4))
         );
 
         // Child leases - all still active
@@ -1069,21 +1121,20 @@ public class KeyspacesStreamsShardSyncerTest {
         assertTrue(result);
 
         // Verify lease deletion behavior
-        // Grandparent lease should not be deleted because:
-        // 1. It's too recent (30 minutes < 6 hours)
-        // 2. Its children (parents) are still being processed
-        verify(leaseRefresher, never()).deleteLease(grandparentLease);
+        // Grandparent lease should be deleted because:
+        // 1. processing of the lease is over and,
+        // 2. its children (parents) have begun processing (checkpoint != TRIM_HORIZON)
+        verify(leaseRefresher, times(1)).deleteLease(grandparentLease);
 
-        // Parent leases should not be deleted because:
-        // 1. They're even more recent than grandparent
-        // 2. Their children (leaf nodes) are still being processed
-        verify(leaseRefresher, never()).deleteLease(parentLease1);
-        verify(leaseRefresher, never()).deleteLease(parentLease2);
+        // Parent leases should be deleted because:
+        // 1. processing of the lease is over and,
+        // 2. their children have begun processing, and their parent was deleted first in this cycle
+        verify(leaseRefresher, times(1)).deleteLease(parentLease1);
+        verify(leaseRefresher, times(1)).deleteLease(parentLease2);
 
         // Child leases should not be deleted because:
-        // 1. They're the most recent
-        // 2. They're still actively processing (not at SHARD_END)
-        // 3. They're open shards (no ending sequence number)
+        // 1. They're still actively processing (not at SHARD_END)
+        // 2. They're open shards (no ending sequence number)
         verify(leaseRefresher, never()).deleteLease(childLease1);
         verify(leaseRefresher, never()).deleteLease(childLease2);
         verify(leaseRefresher, never()).deleteLease(childLease3);
@@ -1129,23 +1180,29 @@ public class KeyspacesStreamsShardSyncerTest {
 
         // Setup leases
         // Grandparent lease - old and completed
+        Set<String> grandParentChildShardIds = new HashSet<>();
+        grandParentChildShardIds.add(parentShardId1);
+        grandParentChildShardIds.add(parentShardId2);
         MultiStreamLease grandparentLease = createCompletedLease(
                 streamArn,
                 grandparentShardId,
-                null  // no parent
+                null,  // no parent
+                grandParentChildShardIds
         );
 
         // Parent leases - all completed but not old enough
         MultiStreamLease parentLease1 = createCompletedLease(
                 streamArn,
                 parentShardId1,
-                grandparentShardId
+                grandparentShardId,
+                new HashSet<>(Arrays.asList(childShardId1, childShardId2))
         );
 
         MultiStreamLease parentLease2 = createCompletedLease(
                 streamArn,
                 parentShardId2,
-                grandparentShardId
+                grandparentShardId,
+                new HashSet<>(Arrays.asList(childShardId3, childShardId4))
         );
 
         // Child leases - still active
@@ -1205,14 +1262,14 @@ public class KeyspacesStreamsShardSyncerTest {
 
         assertTrue(result);
 
-        // Verify only grandparent lease is deleted because:
-        // 1. It's old enough (7 hours > 6 hours)
-        // 2. All its children (parents) are at SHARD_END
+        // Verify grandparent lease is deleted because:
+        // 1. processing of the lease is complete and
+        // 2. all its children (parents) have begun processing (checkpoint != TRIM_HORIZON)
         verify(leaseRefresher, times(1)).deleteLease(grandparentLease);
 
-        // Parent leases should not be deleted because they're not old enough
-        verify(leaseRefresher, never()).deleteLease(parentLease1);
-        verify(leaseRefresher, never()).deleteLease(parentLease2);
+        // Parent leases should be deleted because processing is complete and their parent was deleted first
+        verify(leaseRefresher, times(1)).deleteLease(parentLease1);
+        verify(leaseRefresher, times(1)).deleteLease(parentLease2);
 
         // Child leases should not be deleted because:
         // 1. They're recent
@@ -1263,17 +1320,22 @@ public class KeyspacesStreamsShardSyncerTest {
 
         // Setup leases
         // Grandparent lease - old enough but won't be deleted due to active child
+        Set<String> grandParentChildShardIds = new HashSet<>();
+        grandParentChildShardIds.add(parentShardId1);
+        grandParentChildShardIds.add(parentShardId2);
         MultiStreamLease grandparentLease = createCompletedLease(
                 streamArn,
                 grandparentShardId,
-                null  // no parent
+                null,  // no parent
+                grandParentChildShardIds
         );
 
         // Parent leases - one completed, one still processing
         MultiStreamLease parentLease1 = createCompletedLease(
                 streamArn,
                 parentShardId1,
-                grandparentShardId
+                grandparentShardId,
+                new HashSet<>(Arrays.asList(childShardId1, childShardId2))
         );
 
         MultiStreamLease parentLease2 = createActiveLease(
@@ -1341,13 +1403,13 @@ public class KeyspacesStreamsShardSyncerTest {
 
         assertTrue(result);
 
-        // Verify grandparent lease is NOT deleted because:
-        // 1. Although it's old enough (7 hours > 6 hours)
-        // 2. One of its children (parentLease2) is still processing
-        verify(leaseRefresher, never()).deleteLease(grandparentLease);
+        // Verify grandparent lease is deleted because:
+        // 1. processing is complete and
+        // 2. its children (parents) have begun processing (parent2 is past TRIM_HORIZON)
+        verify(leaseRefresher, times(1)).deleteLease(grandparentLease);
 
-        // Parent leases should not be deleted
-        verify(leaseRefresher, never()).deleteLease(parentLease1);  // Not old enough
+        // Parent lease 1 is deleted (completed, parent deleted first this cycle)
+        verify(leaseRefresher, times(1)).deleteLease(parentLease1);
         verify(leaseRefresher, never()).deleteLease(parentLease2);  // Still processing
 
         // Child leases should not be deleted
@@ -1356,7 +1418,68 @@ public class KeyspacesStreamsShardSyncerTest {
         verify(leaseRefresher, never()).deleteLease(childLease3);
         verify(leaseRefresher, never()).deleteLease(childLease4);
 
-        // Additional verification that no other leases were deleted
-        verify(leaseRefresher, never()).deleteLease(any());
+        // Exactly two leases (grandparent + parent1) were deleted
+        verify(leaseRefresher, times(2)).deleteLease(any());
+    }
+
+    @Test
+    void testChildLeaseNotDeletedBeforeParentLease() throws Exception {
+        // Setup: parent and child both at SHARD_END with childShardIds set,
+        // parent should be deleted before child due to the ordering check.
+        String streamArn = "arn:aws:cassandra:region:account:/keyspace/keyspace1/table/table1/stream/timestamp1";
+        StreamIdentifier streamId = StreamIdentifier.singleStreamInstance(streamArn);
+
+        long baseTimestamp = System.currentTimeMillis() - Duration.ofHours(7).toMillis();
+        String parentShardId = String.format("shardId-%019d-001", baseTimestamp);
+        String childShardId = String.format("shardId-%019d-002", baseTimestamp + 1000);
+        String grandchildShardId = String.format("shardId-%019d-003", baseTimestamp + 2000);
+
+        Shard parentShard = createTestShard(parentShardId, null, null, "0", "100");  // closed
+        Shard childShard = createTestShard(childShardId, parentShardId, null, "101", "200");  // closed
+        Shard grandchildShard = createTestShard(grandchildShardId, childShardId, null, "201", null);  // open
+        List<Shard> currentShards = Arrays.asList(parentShard, childShard, grandchildShard);
+
+        // Parent lease - completed, has child shard id
+        MultiStreamLease parentLease = createCompletedLease(
+                streamArn, parentShardId, null, Collections.singleton(childShardId));
+        // Child lease - completed, has child shard id
+        MultiStreamLease childLease = createCompletedLease(
+                streamArn, childShardId, parentShardId, Collections.singleton(grandchildShardId));
+        // Grandchild lease - active, past TRIM_HORIZON
+        MultiStreamLease grandchildLease = createActiveLease(
+                streamArn, grandchildShardId, "201", childShardId);
+
+        List<Lease> streamLeases = Arrays.asList(parentLease, childLease, grandchildLease);
+
+        when(shardDetector.streamIdentifier()).thenReturn(streamId);
+        when(shardDetector.listShards()).thenReturn(currentShards);
+        when(leaseRefresher.listLeasesForStream(streamId)).thenReturn(streamLeases);
+
+        KeyspacesStreamsShardSyncer multiStreamSyncer = new KeyspacesStreamsShardSyncer(true, streamArn);
+
+        boolean result = multiStreamSyncer.checkAndCreateLeaseForNewShards(
+                shardDetector,
+                leaseRefresher,
+                InitialPositionInStreamExtended.newInitialPosition(InitialPositionInStream.TRIM_HORIZON),
+                metricsScope,
+                false,
+                true
+        );
+
+        assertTrue(result);
+
+        // Parent should be deleted (no parent of its own to wait for)
+        verify(leaseRefresher, times(1)).deleteLease(parentLease);
+        // Child should be deleted (parent was deleted first in same cycle, added to deletedLeases)
+        verify(leaseRefresher, times(1)).deleteLease(childLease);
+        // Grandchild should NOT be deleted (still active)
+        verify(leaseRefresher, never()).deleteLease(grandchildLease);
+
+        // Verify ordering: exactly 2 deletes, parent before child
+        ArgumentCaptor<Lease> deleteCaptor = ArgumentCaptor.forClass(Lease.class);
+        verify(leaseRefresher, times(2)).deleteLease(deleteCaptor.capture());
+        List<Lease> deletedInOrder = deleteCaptor.getAllValues();
+        assertEquals(parentLease.leaseKey(), deletedInOrder.get(0).leaseKey());
+        assertEquals(childLease.leaseKey(), deletedInOrder.get(1).leaseKey());
     }
 }

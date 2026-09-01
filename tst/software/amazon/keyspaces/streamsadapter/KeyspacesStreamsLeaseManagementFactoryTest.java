@@ -24,6 +24,7 @@ import software.amazon.kinesis.common.InitialPositionInStream;
 import software.amazon.kinesis.common.InitialPositionInStreamExtended;
 import software.amazon.kinesis.common.StreamConfig;
 import software.amazon.kinesis.common.StreamIdentifier;
+import software.amazon.kinesis.coordinator.StreamInfoManager;
 import software.amazon.kinesis.leases.LeaseCoordinator;
 import software.amazon.kinesis.leases.LeaseManagementConfig;
 import software.amazon.kinesis.leases.LeaseRefresher;
@@ -151,11 +152,33 @@ class KeyspacesStreamsLeaseManagementFactoryTest {
         ShardSyncTaskManager taskManager = factory.createShardSyncTaskManager(
                 new NullMetricsFactory(),
                 streamConfig,
-                null // deletedStreamListProvider
+                null, // deletedStreamListProvider
+                mock(StreamInfoManager.class)
         );
 
         // Verify
         assertNotNull(taskManager);
+        assertInstanceOf(KeyspacesStreamsShardSyncer.class, taskManager.hierarchicalShardSyncer());
+    }
+
+    @Test
+    void testCreateShardSyncTaskManagerAcceptsNullStreamInfoManager() {
+        StreamConfig streamConfig = mock(StreamConfig.class);
+        StreamIdentifier streamIdentifier = StreamIdentifier.singleStreamInstance(STREAM_ARN);
+        when(streamConfig.streamIdentifier()).thenReturn(streamIdentifier);
+        when(streamConfig.initialPositionInStreamExtended()).thenReturn(
+                InitialPositionInStreamExtended.newInitialPosition(InitialPositionInStream.TRIM_HORIZON)
+        );
+
+        ShardSyncTaskManager taskManager = factory.createShardSyncTaskManager(
+                new NullMetricsFactory(),
+                streamConfig,
+                null,
+                null
+        );
+
+        assertNotNull(taskManager);
+        assertInstanceOf(KeyspacesStreamsShardSyncer.class, taskManager.hierarchicalShardSyncer());
     }
 
     @Test
@@ -182,11 +205,13 @@ class KeyspacesStreamsLeaseManagementFactoryTest {
         ShardSyncTaskManager taskManager = factory.createShardSyncTaskManager(
                 new NullMetricsFactory(),
                 streamConfig,
-                null
+                null,
+                mock(StreamInfoManager.class)
         );
 
         // Verify
         assertNotNull(taskManager);
+        assertInstanceOf(KeyspacesStreamsShardSyncer.class, taskManager.hierarchicalShardSyncer());
     }
 
     @Test
@@ -216,6 +241,7 @@ class KeyspacesStreamsLeaseManagementFactoryTest {
 
         // Verify
         assertNotNull(taskManager);
+        assertInstanceOf(KeyspacesStreamsShardSyncer.class, taskManager.hierarchicalShardSyncer());
     }
 
     @Test

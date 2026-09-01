@@ -24,7 +24,10 @@ import java.util.stream.Collectors;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
+import software.amazon.awssdk.awscore.AwsRequestOverrideConfiguration;
 import software.amazon.awssdk.awscore.exception.AwsServiceException;
+import software.amazon.awssdk.core.ApiName;
+import software.amazon.awssdk.core.RequestOverrideConfiguration;
 import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.core.internal.retry.SdkDefaultRetryStrategy;
@@ -35,6 +38,7 @@ import software.amazon.awssdk.retries.api.BackoffStrategy;
 import software.amazon.awssdk.services.keyspacesstreams.model.GetStreamRequest;
 import software.amazon.awssdk.services.keyspacesstreams.model.GetStreamResponse;
 import software.amazon.awssdk.services.keyspacesstreams.model.ResourceNotFoundException;
+import software.amazon.awssdk.services.keyspacesstreams.model.ShardFilter;
 import software.amazon.awssdk.services.keyspacesstreams.model.ThrottlingException;
 import software.amazon.awssdk.services.keyspacesstreams.model.ValidationException;
 import software.amazon.awssdk.services.keyspacesstreams.model.ValidationExceptionType;
@@ -53,6 +57,8 @@ import software.amazon.awssdk.services.kinesis.model.ShardIteratorType;
 import software.amazon.kinesis.retrieval.GetRecordsResponseAdapter;
 
 import java.time.Duration;
+import java.util.Collections;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 @Slf4j
@@ -75,6 +81,7 @@ public class AmazonKeyspacesStreamsAdapterClient implements KinesisAsyncClient {
     private SkipRecordsBehavior skipRecordsBehavior = SkipRecordsBehavior.SKIP_RECORDS_TO_TRIM_HORIZON;
     private static int MAX_GET_STREAM_RETRY_ATTEMPTS = 50;
     private static Duration GET_STREAM_CALLS_DELAY = Duration.ofMillis(1000);
+    private static final String KCL_CONSUMER_ID_PREFIX = "KCL-ConsumerId";
 
     private Region region;
 
@@ -170,6 +177,38 @@ public class AmazonKeyspacesStreamsAdapterClient implements KinesisAsyncClient {
     }
 
     /**
+     * Fetches the child shards of a shard using GetStream with a shard filter. Used for targeted
+     * child-shard discovery at shard-end and lineage completion.
+     *
+     * @param streamArn The stream ARN to query
+     * @param shardFilter The shard filter (e.g. CHILD_SHARDS for a given shardId)
+     * @param consumerId Consumer identifier appended to the user agent
+     * @return The GetStream response containing the matching child shards
+     */
+    public GetStreamResponse getStreamWithFilter(String streamArn, ShardFilter shardFilter, String consumerId) {
+        GetStreamRequest getStreamRequest = KeyspacesStreamsRequestsBuilder.getStreamRequestBuilder(consumerId)
+                .streamArn(streamArn)
+                .shardFilter(shardFilter)
+                .build();
+        try {
+            return getStreamWithRetries(getStreamRequest);
+        } catch (AwsServiceException e) {
+            throw AmazonServiceExceptionTransformer.transformKeyspacesStreamsToKinesisDescribeStream(e, skipRecordsBehavior);
+        }
+    }
+
+    private String getConsumerId(Optional<AwsRequestOverrideConfiguration> overrideConfiguration) {
+        return overrideConfiguration
+                .map(RequestOverrideConfiguration::apiNames)
+                .orElse(Collections.emptyList())
+                .stream()
+                .map(ApiName::name)
+                .filter(name -> name.contains(KCL_CONSUMER_ID_PREFIX))
+                .findFirst()
+                .orElse("");
+    }
+
+    /**
      * @param getShardIteratorRequest Container for the necessary parameters to execute the GetShardIterator service method on Keyspaces
      *                                Streams.
      * @return The response from the GetShardIterator service method, adapted for use with the AmazonKinesis model.
@@ -184,8 +223,9 @@ public class AmazonKeyspacesStreamsAdapterClient implements KinesisAsyncClient {
     private GetShardIteratorResponse getShardIteratorResponse(
             GetShardIteratorRequest getShardIteratorRequest
     ) throws AwsServiceException, SdkClientException {
+        String consumerId = getConsumerId(getShardIteratorRequest.overrideConfiguration());
         software.amazon.awssdk.services.keyspacesstreams.model.GetShardIteratorRequest keyspacesGetShardIteratorRequest =
-                KeyspacesStreamsRequestsBuilder.getShardIteratorRequestBuilder()
+                KeyspacesStreamsRequestsBuilder.getShardIteratorRequestBuilder(consumerId)
                         .streamArn(getShardIteratorRequest.streamName())
                         .shardId(getShardIteratorRequest.shardId())
                         .shardIteratorType(getShardIteratorRequest.shardIteratorTypeAsString())

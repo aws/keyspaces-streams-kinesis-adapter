@@ -237,6 +237,114 @@ class KeyspacesStreamsShutdownTaskTest {
         verify(recordProcessorCheckpointer, never()).largestPermittedCheckpointValue(any());
     }
 
+    @Test
+    void testFetchChildShardsForCompleteLineageBackfillsParent() throws Exception {
+        // Setup: child shard with a parent that has no childShardIds (needs backfill)
+        String parentShardId = "shardId-parent-001";
+        ChildShard child1 = ChildShard.builder().shardId("child-1").build();
+        task = createShutdownTask(ShutdownReason.SHARD_END, Collections.singletonList(child1));
+
+        // Current lease (the shard being shut down)
+        Lease currentLease = new Lease();
+        currentLease.leaseKey(SHARD_ID);
+        currentLease.leaseOwner(WORKER_ID);
+        currentLease.checkpoint(ExtendedSequenceNumber.TRIM_HORIZON);
+        currentLease.parentShardIds(Collections.singletonList(parentShardId));
+        currentLease.childShardIds(Collections.emptySet());
+
+        // Parent lease — missing childShardIds (needs backfill)
+        Lease parentLease = new Lease();
+        parentLease.leaseKey(parentShardId);
+        parentLease.checkpoint(ExtendedSequenceNumber.SHARD_END);
+        parentLease.parentShardIds(Collections.emptyList());
+        parentLease.childShardIds(Collections.emptySet());
+
+        when(leaseCoordinator.getCurrentlyHeldLease(SHARD_ID)).thenReturn(currentLease);
+        when(leaseRefresher.getLease(SHARD_ID)).thenReturn(currentLease);
+        when(leaseRefresher.getLease(parentShardId)).thenReturn(parentLease);
+        when(leaseRefresher.getLeaseTableIdentifier()).thenReturn("test-lease-table");
+        when(recordProcessorCheckpointer.lastCheckpointValue()).thenReturn(ExtendedSequenceNumber.SHARD_END);
+        when(shardSyncer.createLeaseForChildShard(any(), any())).thenReturn(new Lease());
+
+        // Mock listShardsWithFilter to return child shards for the parent
+        software.amazon.awssdk.services.kinesis.model.Shard childShard = software.amazon.awssdk.services.kinesis.model.Shard.builder()
+                .shardId(SHARD_ID)
+                .build();
+        when(shardDetector.listShardsWithFilter(any(), any()))
+                .thenReturn(Collections.singletonList(childShard));
+
+        task.call();
+
+        // Verify parent lease was updated with child shard IDs
+        // Called twice: once for current shard's updateLeaseWithChildShards, once for parent backfill
+        verify(leaseRefresher, times(2)).updateLeaseWithMetaInfo(any(), eq(UpdateField.CHILD_SHARDS));
+        // Verify listShardsWithFilter was called for the parent backfill
+        verify(shardDetector).listShardsWithFilter(any(), any());
+    }
+
+    @Test
+    void testFetchChildShardsForCompleteLineageSkipsPopulatedParent() throws Exception {
+        // Setup: child shard with a parent that already has childShardIds (no backfill needed)
+        String parentShardId = "shardId-parent-001";
+        ChildShard child1 = ChildShard.builder().shardId("child-1").build();
+        task = createShutdownTask(ShutdownReason.SHARD_END, Collections.singletonList(child1));
+
+        // Current lease
+        Lease currentLease = new Lease();
+        currentLease.leaseKey(SHARD_ID);
+        currentLease.leaseOwner(WORKER_ID);
+        currentLease.checkpoint(ExtendedSequenceNumber.TRIM_HORIZON);
+        currentLease.parentShardIds(Collections.singletonList(parentShardId));
+        currentLease.childShardIds(Collections.emptySet());
+
+        // Parent lease — already has childShardIds (should be skipped)
+        Lease parentLease = new Lease();
+        parentLease.leaseKey(parentShardId);
+        parentLease.checkpoint(ExtendedSequenceNumber.SHARD_END);
+        parentLease.parentShardIds(Collections.emptyList());
+        parentLease.childShardIds(Collections.singleton(SHARD_ID));
+
+        when(leaseCoordinator.getCurrentlyHeldLease(SHARD_ID)).thenReturn(currentLease);
+        when(leaseRefresher.getLease(SHARD_ID)).thenReturn(currentLease);
+        when(leaseRefresher.getLease(parentShardId)).thenReturn(parentLease);
+        when(recordProcessorCheckpointer.lastCheckpointValue()).thenReturn(ExtendedSequenceNumber.SHARD_END);
+        when(shardSyncer.createLeaseForChildShard(any(), any())).thenReturn(new Lease());
+
+        task.call();
+
+        // Verify listShardsWithFilter was NOT called (parent already has childShardIds)
+        verify(shardDetector, never()).listShardsWithFilter(any(), any());
+        // updateLeaseWithMetaInfo called once for the current lease's childShards update, not for parent backfill
+        verify(leaseRefresher, times(1)).updateLeaseWithMetaInfo(any(), eq(UpdateField.CHILD_SHARDS));
+    }
+
+    @Test
+    void testFetchChildShardsForCompleteLineageHandlesNullParentLease() throws Exception {
+        // Setup: child shard with a parent that doesn't exist in the lease table
+        String parentShardId = "shardId-parent-nonexistent";
+        ChildShard child1 = ChildShard.builder().shardId("child-1").build();
+        task = createShutdownTask(ShutdownReason.SHARD_END, Collections.singletonList(child1));
+
+        // Current lease
+        Lease currentLease = new Lease();
+        currentLease.leaseKey(SHARD_ID);
+        currentLease.leaseOwner(WORKER_ID);
+        currentLease.checkpoint(ExtendedSequenceNumber.TRIM_HORIZON);
+        currentLease.parentShardIds(Collections.singletonList(parentShardId));
+        currentLease.childShardIds(Collections.emptySet());
+
+        when(leaseCoordinator.getCurrentlyHeldLease(SHARD_ID)).thenReturn(currentLease);
+        when(leaseRefresher.getLease(SHARD_ID)).thenReturn(currentLease);
+        when(leaseRefresher.getLease(parentShardId)).thenReturn(null); // parent doesn't exist
+        when(recordProcessorCheckpointer.lastCheckpointValue()).thenReturn(ExtendedSequenceNumber.SHARD_END);
+        when(shardSyncer.createLeaseForChildShard(any(), any())).thenReturn(new Lease());
+
+        task.call();
+
+        // Verify no attempt to fetch child shards or update (parent is null)
+        verify(shardDetector, never()).listShardsWithFilter(any(), any());
+    }
+
     private KeyspacesStreamsShutdownTask createShutdownTask(ShutdownReason reason, List<ChildShard> childShards) {
         return new KeyspacesStreamsShutdownTask(
                 shardInfo,

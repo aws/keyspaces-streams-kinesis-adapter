@@ -29,6 +29,9 @@ import software.amazon.kinesis.common.InitialPositionInStream;
 import software.amazon.kinesis.common.InitialPositionInStreamExtended;
 import software.amazon.kinesis.common.StreamConfig;
 import software.amazon.kinesis.coordinator.Scheduler;
+import software.amazon.kinesis.coordinator.streamInfo.StreamIdOnboardingState;
+import software.amazon.kinesis.coordinator.streamInfo.StreamInfoMode;
+import software.amazon.kinesis.leases.LeaseManagementConfig;
 import software.amazon.kinesis.processor.FormerStreamsLeasesDeletionStrategy;
 import software.amazon.kinesis.processor.ShardRecordProcessorFactory;
 import software.amazon.kinesis.processor.StreamTracker;
@@ -117,6 +120,8 @@ class StreamsSchedulerFactoryTest {
 
         assertEquals(2, configs.size());
         assertEquals(deletionStrategy, multiStreamTracker.formerStreamsLeasesDeletionStrategy());
+        configs.forEach(config -> assertEquals(
+                StreamsSchedulerFactory.STREAM_TYPE_KEYSPACES_STREAMS, config.streamIdentifier().streamType()));
     }
 
     @Test
@@ -145,6 +150,8 @@ class StreamsSchedulerFactoryTest {
 
         assertNotNull(tracker);
         assertTrue(tracker.isMultiStream() == false);
+        assertEquals(StreamsSchedulerFactory.STREAM_TYPE_KEYSPACES_STREAMS,
+                tracker.streamConfigList().get(0).streamIdentifier().streamType());
     }
 
     @Test
@@ -226,6 +233,38 @@ class StreamsSchedulerFactoryTest {
         assertNotNull(scheduler);
         assertTrue(scheduler.coordinatorConfig().skipShardSyncAtWorkerInitializationIfLeasesExist());
         assertEquals(IDLE_TIME_BETWEEN_READS, ((PollingConfig)scheduler.retrievalConfig().retrievalSpecificConfig()).idleTimeBetweenReadsInMillis());
+    }
+
+    @Test
+    void testCreateSchedulerForcesStreamInfoTrackingOff() {
+        ConfigsBuilder configsBuilder = new ConfigsBuilder(
+                VALID_STREAM_ARN,
+                APP_NAME,
+                amazonKeyspacesStreamsAdapterClient,
+                dynamoDbAsyncClient,
+                cloudWatchAsyncClient,
+                WORKER_ID,
+                shardRecordProcessorFactory);
+
+        LeaseManagementConfig leaseManagementConfig = configsBuilder.leaseManagementConfig();
+        leaseManagementConfig.streamInfoMode(StreamInfoMode.TRACK_ONLY);
+        leaseManagementConfig.streamIdOnboardingState(StreamIdOnboardingState.ONBOARDED);
+
+        Scheduler scheduler = StreamsSchedulerFactory.createScheduler(
+                configsBuilder.checkpointConfig(),
+                configsBuilder.coordinatorConfig(),
+                leaseManagementConfig,
+                configsBuilder.lifecycleConfig(),
+                configsBuilder.metricsConfig(),
+                configsBuilder.processorConfig(),
+                retrievalConfig,
+                credentialsProvider,
+                region
+        );
+
+        assertNotNull(scheduler);
+        assertEquals(StreamInfoMode.DISABLED, leaseManagementConfig.streamInfoMode());
+        assertEquals(StreamIdOnboardingState.NOT_ONBOARDED, leaseManagementConfig.streamIdOnboardingState());
     }
 
     @Test
