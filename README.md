@@ -37,7 +37,7 @@ Keyspaces Streams Kinesis Adapter implements the Amazon Kinesis interface so tha
     <dependency>
         <groupId>software.amazon.keyspaces</groupId>
         <artifactId>keyspaces-streams-kinesis-adapter</artifactId>
-        <version>1.0.0</version>
+        <version>1.1.0</version>
     </dependency>
 ```
 
@@ -53,7 +53,7 @@ Keyspaces Streams Kinesis Adapter implements the Amazon Kinesis interface so tha
     <dependency>
         <groupId>software.amazon.keyspaces</groupId>
         <artifactId>keyspaces-streams-kinesis-adapter</artifactId>
-        <version>1.0.0</version>
+        <version>1.1.0</version>
     </dependency>
 ```
 
